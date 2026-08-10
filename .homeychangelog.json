@@ -70,5 +70,9 @@
   "0.6.4": {
     "en": "The AirOne filter reading was labelled backwards. It said \"Filter usage\", but the number is how much of the filter is left — 87% means 87% remaining, with 13% used. It now reads \"Filter remaining\". The value itself has not changed, so everything already recorded stays valid and comparable. On units with more than one filter, if the first one sent no reading the sensor quietly showed a different filter's number instead; it now stays blank until that filter reports.",
     "ko": "에어원 필터 표시 이름이 반대로 붙어 있었습니다. «필터 사용률»이라고 돼 있었지만 이 숫자는 남은 양입니다 — 87%는 87%가 남았다는 뜻이고, 쓴 것은 13%입니다. «필터 잔량»으로 바로잡았습니다. 값 자체는 그대로여서 지금까지 쌓인 기록도 그대로 쓰시고 비교하실 수 있습니다. 필터가 여러 개인 기기에서 첫 필터가 값을 안 보내면 다른 필터의 숫자가 대신 표시되던 것도 고쳤습니다 — 이제 그 필터가 값을 보낼 때까지 비워 둡니다."
+  },
+  "0.6.5": {
+    "en": "English throughout the add-device and re-connect screens. They were Korean only, so anyone not reading Korean had nothing to go on while adding an appliance or signing in again. Both screens now follow your language, and so do the messages they show back — including sign-in errors, which are the ones you most need to be able to read. The account screen follows the same rule. Nothing changes for Korean users.",
+    "ko": "기기 추가와 다시 연결 화면에 영어를 넣었습니다. 그동안 한국어만 있어서, 한국어를 읽지 못하는 분은 기기를 추가하거나 다시 로그인할 때 아무 안내도 받지 못했습니다. 이제 두 화면 모두 사용하시는 언어를 따라가고, 화면에 되돌아오는 안내 문구도 마찬가지입니다 — 가장 읽혀야 하는 로그인 오류 메시지까지 포함해서요. 계정 화면도 같은 방식으로 맞췄습니다. 한국어로 쓰시던 분께는 달라지는 것이 없습니다."
   }
 }
