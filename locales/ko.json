@@ -4,7 +4,16 @@
     "login_failed": "로그인에 실패했습니다. 나비엔 스마트 아이디와 비밀번호를 확인하세요.",
     "no_home": "계정에 등록된 집(home)이 없습니다.",
     "command_failed": "기기가 명령을 받지 못했습니다.",
-    "zone_off_last": "이미 다른 편측이 운전대기 상태입니다. 난방을 끄시려면 매트 전원을 종료해 주세요."
+    "zone_off_last": "이미 다른 편측이 운전대기 상태입니다. 난방을 끄시려면 매트 전원을 종료해 주세요.",
+    "bad_credentials": "아이디 또는 비밀번호가 올바르지 않습니다.",
+    "password_change": "비밀번호 변경이 필요합니다. 앱에서 변경 후 다시 시도하세요.",
+    "login_unreadable": "로그인 응답을 해석하지 못했습니다.",
+    "signin_failed": "secured-sign-in 실패: {detail}",
+    "slow_login": "로그인 응답이 지연됩니다. 네트워크를 확인하고 다시 시도하세요.",
+    "need_both": "아이디와 비밀번호를 입력하세요.",
+    "login_error": "로그인에 실패했습니다: {detail}",
+    "connect_failed": "연결에 실패했습니다: {detail}",
+    "no_saved_account": "저장된 계정이 없습니다."
   },
   "stale": "최신 아님",
   "stale_alone": "상태 정보 없음"

@@ -51,7 +51,19 @@ AIR_SENSOR_CACHE_S = 60
 
 
 class NavienAuthError(Exception):
-    """Login failed for a reason retrying will not fix (bad password, etc.)."""
+    """Login failed for a reason retrying will not fix (bad password, etc.).
+
+    Carries a **translation key** as well as text. This message is shown verbatim in the
+    repair view and the settings page, so it has to be available in the reader's language —
+    and this module has no `homey` import to ask which one that is. The key lets the layer
+    that does know (`pairing.py`, `api.py`) render it; `str(exc)` stays readable for logs
+    and for any caller that does not translate.
+    """
+
+    def __init__(self, message: str, key: str | None = None, **params):
+        super().__init__(message)
+        self.key = key
+        self.params = params
 
 
 class NavienApiError(Exception):
@@ -383,12 +395,15 @@ class NavienApi:
         if not html.strip():
             raise NavienNetworkError("빈 로그인 응답")
         if 'id="loginFailPopup"' in html:
-            raise NavienAuthError("아이디 또는 비밀번호가 올바르지 않습니다.")
+            raise NavienAuthError(
+                "아이디 또는 비밀번호가 올바르지 않습니다.", "error.bad_credentials")
         if "passwordChg" in html:
-            raise NavienAuthError("비밀번호 변경이 필요합니다. 앱에서 변경 후 다시 시도하세요.")
+            raise NavienAuthError(
+                "비밀번호 변경이 필요합니다. 앱에서 변경 후 다시 시도하세요.",
+                "error.password_change")
         message = self._extract_message_json(html)
         if not message or "accessToken" not in message:
-            raise NavienAuthError("로그인 응답을 해석하지 못했습니다.")
+            raise NavienAuthError("로그인 응답을 해석하지 못했습니다.", "error.login_unreadable")
         return message
 
     @staticmethod
@@ -431,7 +446,9 @@ class NavienApi:
             raise NavienNetworkError("빈 secured-sign-in 응답")
         envelope = self._parse_envelope(text)
         if envelope.get("code", CODE_SUCCESS) != CODE_SUCCESS:
-            raise NavienAuthError(f"secured-sign-in 실패: {envelope.get('message')}")
+            raise NavienAuthError(
+                f"secured-sign-in 실패: {envelope.get('message')}",
+                "error.signin_failed", detail=envelope.get("message"))
         return envelope.get("data") or {}
 
     # --- raw HTTP ----------------------------------------------------------

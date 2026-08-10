@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from navien_lib import compat
+from navien_lib import compat, i18n
 from navien_lib.const import (
     API_URL,
     IOT_ENDPOINT,
@@ -30,6 +30,29 @@ def _body(kwargs: dict) -> dict:
     flatten into kwargs)."""
     body = kwargs.get("body")
     return body if isinstance(body, dict) else kwargs
+
+
+async def _text(homey, key: str, **params) -> str:
+    """A user-facing string in the language the settings view reported.
+
+    Every `error` this module returns is printed straight into that view, so it has to be
+    in the reader's language. `compat.ui_language` prefers what a webview resolved because
+    Homey's Python i18n answers with the app's language instead of the user's.
+    """
+    return i18n.translate(key, await compat.ui_language(homey), **params)
+
+
+async def _auth_text(homey, exc: NavienAuthError) -> str:
+    """A `NavienAuthError` in the reader's language; its own message if it carries no key.
+
+    `navien/api.py` tags these rather than translating them — it has no `homey` import and
+    so cannot know the language. Same treatment as `pairing.py` gives them.
+    """
+    key = getattr(exc, "key", None)
+    if not key:
+        return str(exc)
+    text = await _text(homey, key, **getattr(exc, "params", {}) or {})
+    return str(exc) if text == key else text
 
 
 def _log(homey, message: str) -> None:
@@ -65,7 +88,7 @@ async def save_credentials(homey, **kwargs) -> dict:
     username = str(body.get("username", "")).strip()
     password = str(body.get("password", ""))
     if not username or not password:
-        return {"ok": False, "error": "아이디와 비밀번호를 입력하세요."}
+        return {"ok": False, "error": await _text(homey, "error.need_both")}
 
     # Every failure below restores the shared session, because `reauth` points the shared
     # client at these credentials *before* it tries them (app.py's `_client` clears
@@ -77,17 +100,17 @@ async def save_credentials(homey, **kwargs) -> dict:
         api = await compat.reauth_shared_api(homey, username, password)
     except NavienAuthError as exc:
         await _restore_shared(homey)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": await _auth_text(homey, exc)}
     except Exception as exc:  # network etc.
         await _restore_shared(homey)
-        return {"ok": False, "error": f"연결에 실패했습니다: {exc}"}
+        return {"ok": False, "error": await _text(homey, "error.connect_failed", detail=exc)}
 
     homes = api.home_seqs()
     if not homes:
         # Also a failure path: the login succeeded, so the shared client is already holding
         # credentials this function is about to refuse to store.
         await _restore_shared(homey)
-        return {"ok": False, "error": "계정에 등록된 집(home)이 없습니다."}
+        return {"ok": False, "error": await _text(homey, "error.no_home")}
 
     await compat.setting_set(homey, SETTING_USERNAME, username)
     await compat.setting_set(homey, SETTING_PASSWORD, password)
@@ -206,19 +229,21 @@ async def check_connection(homey, **kwargs) -> dict:
     username = await compat.setting_get(homey, SETTING_USERNAME)
     password = await compat.setting_get(homey, SETTING_PASSWORD)
     if not username or not password:
-        return {"ok": False, "configured": False, "error": "저장된 계정이 없습니다."}
+        return {"ok": False, "configured": False,
+                "error": await _text(homey, "error.no_saved_account")}
     try:
         api = await compat.shared_api(homey)
         await api.login_if_stale(api.auth_gen)
     except NavienAuthError as exc:
-        return {"ok": False, "configured": True, "error": str(exc)}
+        return {"ok": False, "configured": True, "error": await _auth_text(homey, exc)}
     except Exception as exc:
-        return {"ok": False, "configured": True, "error": f"연결에 실패했습니다: {exc}"}
+        return {"ok": False, "configured": True,
+                "error": await _text(homey, "error.connect_failed", detail=exc)}
     homes = api.home_seqs()
     devices, error = await _detect_devices(api, homes)
     if error is not None:
         return {"ok": False, "configured": True,
-                "error": f"연결에 실패했습니다: {error}"}
+                "error": await _text(homey, "error.connect_failed", detail=error)}
     return {"ok": True, "configured": True,
             "homes": [{"seq": s, "name": n} for s, n in homes],
             "devices": devices}

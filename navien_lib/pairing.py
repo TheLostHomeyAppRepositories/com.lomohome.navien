@@ -19,7 +19,7 @@ mode. See LOGIN_TIMEOUT_S.
 
 import asyncio
 
-from navien_lib import compat
+from navien_lib import compat, i18n
 from navien_lib.const import SETTING_HOME_SEQ, SETTING_PASSWORD, SETTING_USERNAME
 from navien_lib.navien.api import NavienAuthError
 
@@ -44,16 +44,63 @@ from navien_lib.navien.api import NavienAuthError
 # login, i.e. exactly when the orphan was still going to succeed — but only cancellable
 # I/O would remove it.
 LOGIN_TIMEOUT_S = 110.0
-_SLOW_LOGIN = "로그인 응답이 지연됩니다. 네트워크를 확인하고 다시 시도하세요."
-_NEED_LOGIN = "먼저 앱 설정에서 나비엔 계정으로 로그인하세요."
+
+
+async def _view_language(homey, body: dict) -> str:
+    """The language to answer this pairing view in.
+
+    **The view is asked first.** Everything this module returns is rendered verbatim in
+    the pair and repair webviews, and only the view knows what language its user is
+    reading — Homey's Python i18n resolves the *app's* language and answers 'en' whatever
+    the user set (docs/PORTING.md, `compat.ui_language`). So each view reports what it
+    resolved and we answer in kind; the stored value is the fallback for a build whose
+    view could not tell us.
+
+    What the view reports is also remembered, which is what makes this work at all on a
+    fresh install: pairing is often the first webview a user opens, and without this the
+    device-side messages would sit in English until the settings page happened to be
+    visited.
+    """
+    reported = str(body.get("language", "") or "").strip()
+    if reported:
+        await compat.remember_ui_language(homey, reported)
+        return reported[:2].lower()
+    return await compat.ui_language(homey)
+
+
+def _text(language: str, key: str, **params) -> str:
+    return i18n.translate(key, language, **params)
+
+
+def _auth_text(exc: NavienAuthError, language: str) -> str:
+    """A `NavienAuthError` in the reader's language, falling back to its own message.
+
+    `navien/api.py` cannot translate — it has no `homey` import — so it tags the error
+    with a key instead. An untagged one (or a key missing from both locale files) still
+    shows its text rather than nothing.
+    """
+    key = getattr(exc, "key", None)
+    if not key:
+        return str(exc)
+    text = _text(language, key, **getattr(exc, "params", {}) or {})
+    return str(exc) if text == key else text
+
+
+_KNOWN_FIELDS = ("username", "password", "language")
 
 
 def _payload(data, kwargs) -> dict:
-    """The credentials dict, however this Homey build delivers it — positional, or wrapped
-    in a `body`/`data` kwarg. Mirrors api.py's tolerance so the form never silently sees
-    empty fields."""
+    """The view's body, however this Homey build delivers it — positional, or wrapped in a
+    `body`/`data` kwarg. Mirrors api.py's tolerance so the form never silently sees empty
+    fields.
+
+    `language` counts as a field worth recognising, not just the credentials: the pair
+    view's body carries nothing else, so a build that wraps it in `body=` would otherwise
+    fall through to the empty dict and the reported language would be lost without a
+    trace.
+    """
     for candidate in (data, kwargs.get("body"), kwargs.get("data"), kwargs):
-        if isinstance(candidate, dict) and ("username" in candidate or "password" in candidate):
+        if isinstance(candidate, dict) and any(f in candidate for f in _KNOWN_FIELDS):
             return candidate
     return data if isinstance(data, dict) else {}
 
@@ -74,20 +121,23 @@ def install(driver, session, build_devices) -> None:
     """Wire the pair handlers onto `session` (check_session + list_devices)."""
 
     async def on_check_session(data=None, **kwargs) -> dict:
+        language = await _view_language(driver.homey, _payload(data, kwargs))
         username = await compat.setting_get(driver.homey, SETTING_USERNAME)
         password = await compat.setting_get(driver.homey, SETTING_PASSWORD)
         ready = bool(username and password)
-        driver.log(f"pair: check_session ready={ready}")
-        return {"ready": ready, "reason": "" if ready else _NEED_LOGIN}
+        driver.log(f"pair: check_session ready={ready} lang={language}")
+        reason = "" if ready else _text(language, "error.no_credentials")
+        return {"ready": ready, "reason": reason}
 
     async def on_list_devices(data=None, **kwargs) -> list:
+        language = await _view_language(driver.homey, _payload(data, kwargs))
         try:
             api = await asyncio.wait_for(compat.shared_api(driver.homey), timeout=LOGIN_TIMEOUT_S)
         except TimeoutError:
-            raise Exception(_SLOW_LOGIN) from None
+            raise Exception(_text(language, "error.slow_login")) from None
         except Exception as exc:
             driver.log(f"pair: shared login failed: {exc}")
-            raise Exception(_NEED_LOGIN) from exc
+            raise Exception(_text(language, "error.no_credentials")) from exc
         home_seq = await _home_seq(driver.homey, api)
         devices = await asyncio.wait_for(
             build_devices(api, home_seq), timeout=LOGIN_TIMEOUT_S
@@ -104,11 +154,12 @@ def install_repair(driver, session) -> None:
 
     async def on_login(data=None, **kwargs) -> bool:
         body = _payload(data, kwargs)
+        language = await _view_language(driver.homey, body)
         username = str(body.get("username", "")).strip()
         password = str(body.get("password", ""))
         driver.log(f"repair: login attempt (user={'set' if username else 'empty'})")
         if not username or not password:
-            raise Exception("아이디와 비밀번호를 입력하세요.")
+            raise Exception(_text(language, "error.need_both"))
         try:
             # Validate against the shared session (updated in place). Settings aren't
             # touched yet, so a wrong entry can't clobber the working account.
@@ -118,13 +169,13 @@ def install_repair(driver, session) -> None:
             )
         except NavienAuthError as exc:
             await _restore_shared(driver.homey)
-            raise Exception(str(exc)) from exc
+            raise Exception(_auth_text(exc, language)) from exc
         except TimeoutError:
             await _restore_shared(driver.homey)
-            raise Exception(_SLOW_LOGIN) from None
+            raise Exception(_text(language, "error.slow_login")) from None
         except Exception as exc:
             await _restore_shared(driver.homey)
-            raise Exception(f"로그인에 실패했습니다: {exc}") from exc
+            raise Exception(_text(language, "error.login_error", detail=exc)) from exc
 
         await compat.setting_set(driver.homey, SETTING_USERNAME, username)
         await compat.setting_set(driver.homey, SETTING_PASSWORD, password)

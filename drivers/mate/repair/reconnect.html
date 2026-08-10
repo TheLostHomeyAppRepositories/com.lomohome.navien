@@ -15,18 +15,53 @@
 
 <div id="navien-repair">
   <div class="card">
-    <h2>나비엔 계정 다시 로그인</h2>
-    <p>비밀번호를 바꾸셨거나 로그인이 만료되면 여기서 다시 로그인하세요.</p>
-    <label>아이디</label>
+    <h2 data-i18n="title">Sign in to Navien again</h2>
+    <p data-i18n="intro">If you changed your password or your sign-in expired, sign in again here.</p>
+    <label data-i18n="id">Account ID</label>
     <input id="username" type="text" autocomplete="username" spellcheck="false">
-    <label>비밀번호</label>
+    <label data-i18n="pw">Password</label>
     <input id="password" type="password" autocomplete="current-password">
-    <button id="save">로그인 &amp; 저장</button>
+    <button id="save" data-i18n="save">Sign in &amp; save</button>
     <div id="msg" class="msg"></div>
   </div>
 </div>
 
 <script type="text/javascript">
+  // Strings live here rather than in locales/*.json because a repair view is a raw
+  // fragment: Homey does not run its own i18n over it, and there is no build step to
+  // inline one. English is the default, so a Homey whose language we cannot read still
+  // reads. Messages that come back from the handler are already translated there — the
+  // resolved code below is sent along so it can do that.
+  var STR = {
+    en: { title:"Sign in to Navien again",
+          intro:"If you changed your password or your sign-in expired, sign in again here.",
+          id:"Account ID", pw:"Password", save:"Sign in & save",
+          need:"Enter both an account ID and a password.",
+          saving:"Signing in…", done:"Done." },
+    ko: { title:"나비엔 계정 다시 로그인",
+          intro:"비밀번호를 바꾸셨거나 로그인이 만료되면 여기서 다시 로그인하세요.",
+          id:"아이디", pw:"비밀번호", save:"로그인 & 저장",
+          need:"아이디와 비밀번호를 입력하세요.",
+          saving:"로그인 중…", done:"완료되었습니다." }
+  };
+  var LANG = "en";
+  function t(k) { return (STR[LANG] && STR[LANG][k]) || STR.en[k] || k; }
+
+  function resolveLang(ref) {
+    var code = "";
+    try { if (ref && typeof ref.getLanguage === "function") code = ref.getLanguage() || ""; } catch (e) { /* ignore */ }
+    if (!code) { try { code = navigator.language || ""; } catch (e) { /* ignore */ } }
+    code = String(code).slice(0, 2).toLowerCase();
+    if (STR[code]) LANG = code;
+  }
+
+  function applyI18n() {
+    var nodes = document.querySelectorAll("[data-i18n]");
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].textContent = t(nodes[i].getAttribute("data-i18n"));
+    }
+  }
+
   var started = false, H = null;
   function usable(o) { return !!o && typeof o.ready === "function" && typeof o.emit === "function"; }
 
@@ -37,19 +72,21 @@
     if (!ref) return;
     if (!document.getElementById("save")) return;
     started = true; H = ref;
+    resolveLang(ref);
+    applyI18n();
     try { H.ready(); } catch (e) { /* ignore */ }
     wire();
   }
 
   function wire() {
-    function msg(t, c) { var m = document.getElementById("msg"); m.textContent = t; m.className = "msg " + (c || ""); }
+    function msg(t2, c) { var m = document.getElementById("msg"); m.textContent = t2; m.className = "msg " + (c || ""); }
     document.getElementById("save").addEventListener("click", function () {
       var u = document.getElementById("username").value.trim();
       var p = document.getElementById("password").value;
-      if (!u || !p) { msg("아이디와 비밀번호를 입력하세요.", "err"); return; }
-      var btn = this; btn.disabled = true; msg("로그인 중…");
-      Promise.resolve(H.emit("login", { username: u, password: p }))
-        .then(function () { msg("완료되었습니다.", "ok"); H.done(); })
+      if (!u || !p) { msg(t("need"), "err"); return; }
+      var btn = this; btn.disabled = true; msg(t("saving"));
+      Promise.resolve(H.emit("login", { username: u, password: p, language: LANG }))
+        .then(function () { msg(t("done"), "ok"); H.done(); })
         .catch(function (err) { btn.disabled = false; msg(String((err && err.message) || err), "err"); });
     });
   }

@@ -4,7 +4,16 @@
     "login_failed": "Sign-in failed. Check your Navien account ID and password.",
     "no_home": "No home is registered on this account.",
     "command_failed": "The appliance did not accept the command.",
-    "zone_off_last": "The other side is already stopped. To stop heating, switch the mat off."
+    "zone_off_last": "The other side is already stopped. To stop heating, switch the mat off.",
+    "bad_credentials": "That account ID or password is not correct.",
+    "password_change": "Navien is asking for a new password. Change it in the Navien app, then try again.",
+    "login_unreadable": "The sign-in reply could not be read.",
+    "signin_failed": "Sign-in was refused: {detail}",
+    "slow_login": "The sign-in is taking too long. Check your network connection and try again.",
+    "need_both": "Enter both an account ID and a password.",
+    "login_error": "Sign-in failed: {detail}",
+    "connect_failed": "Could not reach Navien: {detail}",
+    "no_saved_account": "No account is saved yet."
   },
   "stale": "stale",
   "stale_alone": "no status yet"
