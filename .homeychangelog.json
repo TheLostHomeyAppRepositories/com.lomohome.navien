@@ -66,5 +66,9 @@
   "0.6.3": {
     "en": "A temperature mat could show a side as heating when it was actually off. The mat reports whether a side is on separately from its temperature, and a side that is off can still report a normal temperature — so the tile showed 33° for a side the phone app was showing as off. Both the tile and the \"you cannot stop the last running side\" guidance now go by whether the mat says the side is on, which is what the phone app does. Nothing changes for level-based (carbon) mats or for the AirOne.",
     "ko": "온도형 매트에서 꺼져 있는 쪽이 켜져 있는 것처럼 보일 수 있었습니다. 매트는 한쪽이 켜졌는지를 온도와 따로 알려주는데, 꺼진 쪽도 평범한 온도를 계속 보고할 수 있습니다. 그래서 휴대폰 앱에서는 «꺼짐»인 쪽이 여기서는 33도로 보이곤 했습니다. 이제 타일 표시도, 마지막 한쪽은 끌 수 없다는 안내도 매트가 알려주는 «켜짐» 표시를 기준으로 판단합니다 — 휴대폰 앱과 같은 방식입니다. 단계형(카본) 매트와 에어원은 달라지는 것이 없습니다."
+  },
+  "0.6.4": {
+    "en": "The AirOne filter reading was labelled backwards. It said \"Filter usage\", but the number is how much of the filter is left — 87% means 87% remaining, with 13% used. It now reads \"Filter remaining\". The value itself has not changed, so everything already recorded stays valid and comparable. On units with more than one filter, if the first one sent no reading the sensor quietly showed a different filter's number instead; it now stays blank until that filter reports.",
+    "ko": "에어원 필터 표시 이름이 반대로 붙어 있었습니다. «필터 사용률»이라고 돼 있었지만 이 숫자는 남은 양입니다 — 87%는 87%가 남았다는 뜻이고, 쓴 것은 13%입니다. «필터 잔량»으로 바로잡았습니다. 값 자체는 그대로여서 지금까지 쌓인 기록도 그대로 쓰시고 비교하실 수 있습니다. 필터가 여러 개인 기기에서 첫 필터가 값을 안 보내면 다른 필터의 숫자가 대신 표시되던 것도 고쳤습니다 — 이제 그 필터가 값을 보낼 때까지 비워 둡니다."
   }
 }
