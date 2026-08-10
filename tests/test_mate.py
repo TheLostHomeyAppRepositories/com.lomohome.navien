@@ -272,6 +272,30 @@ def test_level_display_is_unchanged_by_the_enable_first_rule():
     assert d.zone_display_value("right") == 4
 
 
+def test_an_unconfirmed_control_axis_invents_nothing():
+    """Water mats report `1.0C`, an axis nobody here has measured.
+
+    `off_value` is `rangeMin - step`, and `step` is only known for the two axes that were
+    checked against real hardware. Guessing 0.5 for an unverified one would send a
+    plausible number to an appliance that may read it as something else, so the mat gets
+    no temperature control at all and zone-off refuses out loud.
+    """
+    raw = _single_temp()
+    fn = raw["Properties"]["registry"]["attributes"]["functions"]
+    fn["heatControl"] = {"unit": "1.0C", "rangeMin": 28, "rangeMax": 45}
+    m = mate.MateDevice.from_raw(raw)
+
+    assert not m.heat_control.is_known and m.heat_control.off_value is None
+    caps = m.homey_capabilities()
+    assert "target_temperature" not in caps and "navien_heat_level" not in caps
+    try:
+        m.desired_zone_off("single")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("an unknown axis must not produce an off value")
+
+
 def test_mate_control_raw_body():
     api = NavienApi(username="u", password="p")
     api.user_seq = "77"

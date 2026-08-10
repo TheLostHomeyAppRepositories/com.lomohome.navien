@@ -483,21 +483,36 @@ class AironeDevice:
 
     @property
     def filters(self) -> list:
-        """Filter life **remaining**, as a percent, one per filter the outdoor unit reports.
+        """Filter life **remaining**, as a percent. **One slot per filter the outdoor unit
+        declares**, `None` where that filter sent no usable value.
 
         **The wire field lies.** It is `odu.filter[i].usage.percent`, and both this port
         and navien_smart_ha read that name as "how much of the filter is used up". It is
-        the opposite: measured against the Navien app on a real unit, a reading of 87 is
-        87% of the filter's life *left* (13% used). The capability keeps its
-        `navien_filter_usage` id — renaming it would drop the sensor from every paired
-        device and take the Insights history with it — but every label says 잔량.
+        the opposite, confirmed twice over: measured against the Navien app on a real unit,
+        87 is 87% of the filter's life *left* (13% used); and the app's own filter screen
+        turns the number into 「필터가 충분하네요」 at 76 and up, 「필터를 교체해 주세요」
+        at 10 and below (navien_smart_ha v0.18.0, read out of the APK). A usage figure
+        would read the other way round. The capability keeps its `navien_filter_usage` id —
+        renaming it would drop the sensor from every paired device and take the Insights
+        history with it — but every label says 잔량.
+
+        **The slots hold their positions.** Some outdoor units declare four filters and
+        send values for only some of them (navien_smart_ha, reported). Dropping the empty
+        ones would slide the rest forward, and the device layer shows `filters[0]` — so a
+        unit whose *first* filter is silent would have had a later filter's number
+        presented as that one's. A blank reading beats a confident wrong one.
         """
         out = []
         for f in self._odu.get("filter") or []:
+            if not isinstance(f, dict):
+                out.append(None)
+                continue
             usage = f.get("usage") or {}
             pct = usage.get("percent", f.get("percent"))
-            if pct is not None:
-                out.append(int(pct))
+            try:
+                out.append(None if pct is None else int(pct))
+            except (TypeError, ValueError):
+                out.append(None)
         return out
 
     # --- control payloads --------------------------------------------------

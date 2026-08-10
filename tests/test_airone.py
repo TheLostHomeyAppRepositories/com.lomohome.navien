@@ -41,6 +41,32 @@ def test_from_raw_parses_newer_gen():
     assert u.filters == [42]
 
 
+def test_a_silent_filter_keeps_its_slot():
+    """Some outdoor units declare four filters and answer for only some of them.
+
+    Dropping the empty ones slides the rest forward, and the device layer shows
+    `filters[0]` — so a unit whose first filter is silent would have had filter 2's
+    number presented as filter 1's. Blank beats confidently wrong.
+    """
+    raw = _sample_raw()
+    raw["Properties"]["data"]["did"]["reported"]["odu"] = {"filter": [
+        {},                                     # declared, no reading
+        {"usage": {"percent": 87}},
+        {"usage": {}},                          # present but empty
+        "not-a-dict",                           # the server is not trusted to be tidy
+    ]}
+    u = airone.AironeDevice.from_raw(raw)
+    assert u.filters == [None, 87, None, None]
+
+
+def test_an_unparseable_filter_reading_is_blank_not_zero():
+    """0 reads as "replace it now" — never invent that."""
+    raw = _sample_raw()
+    raw["Properties"]["data"]["did"]["reported"]["odu"] = {
+        "filter": [{"usage": {"percent": ""}}]}
+    assert airone.AironeDevice.from_raw(raw).filters == [None]
+
+
 def test_dict_nickname_uses_main_item():
     raw = {
         "serviceCode": 300, "deviceSeq": 1, "deviceId": "A",
