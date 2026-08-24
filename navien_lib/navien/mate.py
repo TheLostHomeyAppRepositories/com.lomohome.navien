@@ -309,13 +309,36 @@ class MateDevice:
         We read the value only when `enable` is absent. On the level axis that changes
         nothing: `level 0` and `enable false` move together (navien_smart_ha, measured).
 
-        Ported from navien_smart_ha v0.17.2, which found the two halves disagreeing —
-        one place asking `enable`, another asking the value. `zone_display_value` keeps
-        the tile on this same answer.
+        **`enable` only counts while the appliance is on.** It answers "is this zone
+        heating right now", not "was this zone switched off" — powering the mat down sets
+        it false on every zone, whatever each one is set to. From the reporter's status log
+        on navien_smart_ha issue #19:
+
+            opMode 1   left {28.0, enable T}   right {27.5, enable F}
+            opMode 0   left {28.0, enable F}   right {27.5, enable F}   <- powered off
+            opMode 1   left {28.0, enable F}   right {28.0, enable F}   <- just switched on
+            opMode 1   left {28.0, enable T}   right {28.0, enable T}   <- 1.3 s later
+
+        Without that guard a zone set to 33 reads as off the moment the mat is powered
+        down — and `zone_display_value` draws the tile from this answer, so the temperature
+        the user picked collapsed to the bottom of the picker until they switched the mat
+        back on. Off, the value is the only honest source. **Unknown power counts as off
+        for this purpose**: `is_on` is `None` when no mode has arrived, and trusting
+        `enable` on a state we cannot place is what caused this in the first place.
+
+        The fourth line is the cost of keeping it this simple: for about a second after
+        power-on the appliance reports every zone false before it catches up, so the tile
+        dips to the picker floor and comes back. Upstream accepts the same dip. Papering
+        over it would mean disbelieving `enable` while the mat is on, which is the case
+        this method exists to get right.
+
+        Ported from navien_smart_ha v0.17.2 (read `enable` first) and v0.18.1 (only while
+        the appliance is on) — the second fixing a regression the first introduced.
         """
-        enabled = self.zone_enabled(zone)
-        if enabled is not None:
-            return not enabled
+        if self.is_on:
+            enabled = self.zone_enabled(zone)
+            if enabled is not None:
+                return not enabled
         control = self.active_control
         off = control.off_value if control else None
         setting = self.zone_setting(zone)
@@ -401,13 +424,27 @@ class MateDevice:
         return d
 
     def desired_level(self, zone, value) -> dict:
+        """Set a heat level, powering the appliance on with it.
+
+        **The `operationMode` was missing here.** `desired_temperature` has always sent it
+        and this did not, so on a powered-off level mat picking a heat level set the level
+        and left the appliance off — the tile moved and nothing warmed up. Both axes now
+        behave the same, which is also what the appliance expects: turning a zone on from
+        cold turns the mat on with it (navien_smart_ha v0.18.1's README, measured).
+
+        Stopping a zone still leaves power alone — see `desired_zone_off`.
+        """
         value = int(value)
         off = self._off_value()
-        if off is None:
-            return self.build_heater_desired({zone: value}, enables={zone: value > 0})
-        if value <= off:
+        if off is not None and value <= off:
             return self.desired_zone_off(zone)
-        return self.build_heater_desired({zone: value}, enables={zone: True})
+        # With no `off_value` the axis is unconfirmed, so `0` is the only value we can read
+        # as "not running" — see `HeatControl.off_value`.
+        running = True if off is not None else value > 0
+        desired = self.build_heater_desired({zone: value}, enables={zone: running})
+        if running:
+            desired["operationMode"] = 1
+        return desired
 
     def _off_value(self):
         control = self.active_control
@@ -427,6 +464,11 @@ class MateDevice:
         **We do not turn the appliance off on the user's behalf.** They asked to stop one
         zone; cutting power is a different, larger action, and the phone app does not do it
         either — it shows the same guidance and leaves power alone.
+
+        There is a hardware reason behind the app's choice, measured since: **powering the
+        mat on turns both zones on** (navien_smart_ha v0.18.1). Cutting power to honour a
+        one-zone stop would therefore throw away a one-side-only setup — the next power-on
+        would heat the side the user had deliberately stopped, every time.
 
         Unlike upstream, a **single-zone** mat is not refused: its `zones` has no other
         member, so `stays_on` there would always be false, and refusing would remove the

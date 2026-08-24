@@ -39,9 +39,15 @@ The Homey port itself is © 2026 Geunwon Mo.
   seasonal heating/cooling, running/error state and over-temperature warning. Zones can be
   stopped individually (one step below the minimum *is* "off" on this hardware), and the
   last running zone — which the appliance itself refuses to stop — says why and points at
-  the power switch. On/off is read from the mat's own enable flag, the way the phone app
-  does it, so a zone that is off still shows as off even while it reports a normal
-  temperature.
+  the power switch. On/off is read from the mat's own enable flag **while the appliance is
+  on**, the way the phone app does it: a zone that is off shows as off even while it
+  reports a normal temperature, but a mat that is powered down flags every zone that way,
+  so there the temperature you set is what stands.
+- **Split-mat power** — setting a temperature or heat level on one side of a cold mat
+  switches the mat on with it. Stopping the last running side does *not* cut power on your
+  behalf: powering this hardware on wakes **both** sides, so doing that would throw away a
+  one-side-only setup every time (measured in the original project). Use the power switch
+  to stop everything.
 - **Flow** — automate both appliances: AirOne operating mode / fan speed / power /
   desired humidity, and sleep-mat power / season / per-zone temperature and heat level,
   as actions, with matching condition cards.

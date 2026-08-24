@@ -272,6 +272,60 @@ def test_level_display_is_unchanged_by_the_enable_first_rule():
     assert d.zone_display_value("right") == 4
 
 
+def test_a_powered_off_mat_keeps_the_temperature_you_set():
+    """`enable` says "heating right now", not "switched off" (navien_smart_ha issue #19).
+
+    Powering the mat down sets it false on every zone whatever each is set to, so reading
+    it there marked a zone at 33 as off — and this app draws the tile from that answer,
+    so the picked temperature collapsed to the picker floor until the mat came back on.
+    The reporter's log, verbatim:
+
+        opMode 1   left {28.0, enable T}   right {27.5, enable F}
+        opMode 0   left {28.0, enable F}   right {27.5, enable F}   <- powered off
+    """
+    m = mate.MateDevice.from_raw(_double_temp())
+    m.apply_reported({"operationMode": 0, "heater": {
+        "left": {"enable": False, "temperature": {"set": 33.0}},
+        "right": {"enable": False, "temperature": {"set": 27.5}}}})
+
+    assert m.is_on is False
+    assert m.zone_is_off("left") is False       # set to 33 — not switched off
+    assert m.zone_display_value("left") == 33.0  # the tile still shows what was picked
+    assert m.zone_is_off("right") is True        # parked at off_value — genuinely off
+    assert m.zone_display_value("right") == 27.5
+
+
+def test_power_off_does_not_make_every_zone_look_like_the_last_one():
+    """The refusal reads the same answer, so it fired on a mat that was merely off."""
+    m = mate.MateDevice.from_raw(_double_temp())
+    m.apply_reported({"operationMode": 0, "heater": {
+        "left": {"enable": False, "temperature": {"set": 33.0}},
+        "right": {"enable": False, "temperature": {"set": 30.0}}}})
+
+    assert m.desired_zone_off("left")["heater"]["left"]["temperature"]["set"] == 27.5
+
+
+def test_enable_still_wins_once_the_mat_is_running():
+    """The guard is about power, not about distrusting `enable` — issue #16 still holds."""
+    m = mate.MateDevice.from_raw(_double_temp())
+    m.apply_reported({"operationMode": 1, "heater": {
+        "left": {"enable": False, "temperature": {"set": 33.0}},
+        "right": {"enable": True, "temperature": {"set": 30.0}}}})
+
+    assert m.is_on is True
+    assert m.zone_is_off("left") is True and m.zone_display_value("left") == 27.5
+
+
+def test_unknown_power_is_not_treated_as_running():
+    """No mode reported yet. Trusting `enable` on a state we cannot place caused this."""
+    m = mate.MateDevice.from_raw(_double_temp())
+    m.apply_reported({"heater": {
+        "left": {"enable": False, "temperature": {"set": 33.0}}}})
+
+    assert m.is_on is None
+    assert m.zone_is_off("left") is False and m.zone_display_value("left") == 33.0
+
+
 def test_an_unconfirmed_control_axis_invents_nothing():
     """Water mats report `1.0C`, an axis nobody here has measured.
 
@@ -294,6 +348,31 @@ def test_an_unconfirmed_control_axis_invents_nothing():
         pass
     else:
         raise AssertionError("an unknown axis must not produce an off value")
+
+
+def test_setting_a_heat_level_powers_the_mat_on():
+    """`desired_temperature` always did; this did not, so a level mat that was off stayed
+    off while its tile moved. Turning a zone on from cold turns the appliance on with it.
+    """
+    d = mate.MateDevice.from_raw(_double_level_four_season())
+    d.apply_reported({"operationMode": 0, "season": 0, "heater": {
+        "left": {"enable": False, "level": {"set": 0}},
+        "right": {"enable": False, "level": {"set": 0}}}})
+
+    on = d.desired_level("left", 3)
+    assert on["operationMode"] == 1
+    assert on["heater"]["left"] == {"enable": True, "level": {"set": 3}}
+
+
+def test_stopping_a_level_zone_still_leaves_power_alone():
+    """Stopping one zone is not powering the mat down — and power-on wakes both zones,
+    so cutting it would lose a one-side-only setup."""
+    d = mate.MateDevice.from_raw(_double_level_four_season())
+    d.apply_reported({"operationMode": 1, "season": 0, "heater": {
+        "left": {"enable": True, "level": {"set": 3}},
+        "right": {"enable": True, "level": {"set": 4}}}})
+
+    assert "operationMode" not in d.desired_level("left", 0)
 
 
 def test_mate_control_raw_body():
