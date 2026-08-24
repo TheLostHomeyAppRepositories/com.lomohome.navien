@@ -37,17 +37,15 @@ The Homey port itself is © 2026 Geunwon Mo.
 - **AirMonitor** — paired as its own sensor device.
 - **Sleep mats** — power, per-zone temperature (0.5 °C) and heat level, single/double,
   seasonal heating/cooling, running/error state and over-temperature warning. Zones can be
-  stopped individually (one step below the minimum *is* "off" on this hardware), and the
-  last running zone — which the appliance itself refuses to stop — says why and points at
-  the power switch. On/off is read from the mat's own enable flag **while the appliance is
-  on**, the way the phone app does it: a zone that is off shows as off even while it
-  reports a normal temperature, but a mat that is powered down flags every zone that way,
-  so there the temperature you set is what stands.
+  stopped individually — one step below the minimum *is* "off" on this hardware. On/off is
+  read from the mat's own enable flag **while the appliance is on**, the way the phone app
+  does it: a zone that is off shows as off even while it reports a normal temperature, but
+  a powered-down mat flags every zone that way, so there **the temperature you set stands**.
 - **Split-mat power** — setting a temperature or heat level on one side of a cold mat
-  switches the mat on with it. Stopping the last running side does *not* cut power on your
-  behalf: powering this hardware on wakes **both** sides, so doing that would throw away a
-  one-side-only setup every time (measured in the original project). Use the power switch
-  to stop everything.
+  switches the mat on with it. **The last running side cannot be stopped** — the appliance
+  refuses it — so the app says why and points at the power switch. It will not cut power
+  for you: powering this hardware on wakes **both** sides, so doing that would throw away a
+  one-side-only setup every time (measured in the original project).
 - **Flow** — automate both appliances: AirOne operating mode / fan speed / power /
   desired humidity, and sleep-mat power / season / per-zone temperature and heat level,
   as actions, with matching condition cards.

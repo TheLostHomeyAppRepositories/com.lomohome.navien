@@ -74,5 +74,9 @@
   "0.6.5": {
     "en": "English throughout the add-device and re-connect screens. They were Korean only, so anyone not reading Korean had nothing to go on while adding an appliance or signing in again. Both screens now follow your language, and so do the messages they show back — including sign-in errors, which are the ones you most need to be able to read. The account screen follows the same rule. Nothing changes for Korean users.",
     "ko": "기기 추가와 다시 연결 화면에 영어를 넣었습니다. 그동안 한국어만 있어서, 한국어를 읽지 못하는 분은 기기를 추가하거나 다시 로그인할 때 아무 안내도 받지 못했습니다. 이제 두 화면 모두 사용하시는 언어를 따라가고, 화면에 되돌아오는 안내 문구도 마찬가지입니다 — 가장 읽혀야 하는 로그인 오류 메시지까지 포함해서요. 계정 화면도 같은 방식으로 맞췄습니다. 한국어로 쓰시던 분께는 달라지는 것이 없습니다."
+  },
+  "0.6.6": {
+    "en": "Sleep mat fixes. Switching the mat off used to drop the temperature you had set back to the lowest value on the tile: the mat flags every side as \"not heating\" when it is off, whatever each side is set to, and that was read as \"this side was turned off\". Set a side to 33 degrees and switch the mat off, and it now still says 33. Stopping one side of an already-off mat no longer claims it is the last side still running, either. And on level (carbon) mats, picking a heat level while the mat is off now switches it on, the way setting a temperature always has — before, the control moved and nothing warmed up.",
+    "ko": "숙면매트 수정입니다. 매트 전원을 끄면 맞춰두신 온도가 타일에서 최저값으로 주저앉았습니다. 매트는 전원이 꺼지면 맞춰둔 값과 상관없이 모든 쪽에 «난방 안 함» 표시를 붙이는데, 저희가 그것을 «이 쪽은 꺼두신 것»으로 잘못 읽었습니다. 이제 한쪽을 33도로 맞춰두셨다면 매트를 꺼도 33도 그대로입니다. 이미 꺼져 있는 매트에서 한쪽을 끄려 할 때 «마지막으로 운전 중인 쪽»이라고 잘못 안내하던 것도 함께 고쳤습니다. 단계형(카본) 매트는 전원이 꺼진 상태에서 단계를 고르면 조작만 되고 매트는 켜지지 않았는데, 이제 온도 조작과 똑같이 전원까지 함께 켜집니다."
   }
 }

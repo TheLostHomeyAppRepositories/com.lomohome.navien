@@ -40,6 +40,25 @@ The Python package is `navien_lib` (**not** `lib`).
   `flow/{actions,conditions}/*.json`. **Never hand-edit root `app.json`** (it is generated).
   `drivers/<id>/` — driver shim, pair views, assets.
 
+## User-facing text must be bilingual
+
+The App Store requires English; a Korean-only screen fails review (it did, in 0.6.5).
+**Every string a user can read needs both languages, English as the default.**
+
+- **Python** — `i18n.translate(key, language)` against `locales/{en,ko}.json`. Never inline
+  a user-facing string. `navien/api.py` has no `homey` import and so cannot resolve a
+  language: it tags errors with a key (`NavienAuthError(text, "error.x")`) and `pairing.py`
+  / `api.py` render them.
+- **Which language** — `compat.ui_language(homey)`, **not** `homey.i18n.get_language()`:
+  that one reports the *app's* language and answers `en` whatever the user set. Webviews
+  resolve it themselves and report it back, which is what populates the stored value.
+- **Webviews** (`settings/index.html`, `drivers/*/pair|repair/*.html`) — raw fragments, so
+  Homey runs no i18n over them and they carry their own `STR = {en, ko}` table plus
+  `data-i18n` markup written in English. They send `language` with every call so the
+  handler answers in kind.
+- `tests/test_pairing_language.py` fences all of this, including that both locale files
+  carry the same keys.
+
 ## Build / install / publish
 
 ```sh
@@ -47,7 +66,8 @@ homey app validate --level publish   # validate before committing docs/manifest 
 homey app build                      # composes .homeycompose/* into app.json
 homey app install                    # build + install to the connected Homey Pro
 homey app run                        # dev mode with live logs (diagnose pairing/login)
-uv run pytest -q                     # unit tests for the ported logic (navien_lib/navien/*)
+uv run pytest -q                     # the whole suite: ported logic, device lifecycle,
+                                     # pairing i18n, and an import check over every module
 ```
 
 **Deploy ("배포")** is a fixed sequence — bump `version` in `.homeycompose/app.json` by
@@ -65,8 +85,10 @@ add a `Co-Authored-By: Claude ...` trailer to commits.
   정지/외출 running states, optimistic settle with confirm-release. Newer-gen units only
   (modelCode ≥ 1000).
 - **AirMonitor** — air-quality sensor, exposed as its own device.
-- **Sleep mats (숙면매트, serviceCode 200)** — supported with power/season/temperature/
-  level control and Flow cards.
+- **Sleep mats (숙면매트, serviceCode 200)** — power/season/temperature/level control and
+  Flow cards. The zone on/off rule is the subtle part and has bitten twice: `enable` means
+  "heating right now", so it is only trusted while the appliance is on — see PORTING.md §5
+  before touching `zone_is_off`, `zone_display_value` or `desired_zone_off`.
 
 All device types share the single app-level session and support Flow cards. Public repo:
 https://github.com/moKorean/com.lomohome.navien
