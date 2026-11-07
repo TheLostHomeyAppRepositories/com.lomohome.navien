@@ -187,12 +187,16 @@ def register_run_listener(card, fn) -> None:
 async def ui_language(homey, default: str = "en") -> str:
     """The language to write user-facing messages in.
 
-    Prefers what a webview reported, because Homey's Python i18n resolves the *app's*
+    A language picked in the app settings wins. Otherwise prefers what a webview
+    reported, because Homey's Python i18n resolves the *app's*
     language rather than the user's and returns 'en' regardless (docs/PORTING.md).
     Falls back to that accessor anyway, in case a future firmware fixes it.
     """
-    from .const import SETTING_UI_LANGUAGE
+    from .const import SETTING_UI_LANGUAGE, SETTING_UI_LANGUAGE_CHOICE
 
+    chosen = await setting_get(homey, SETTING_UI_LANGUAGE_CHOICE)
+    if chosen and chosen != "auto":
+        return chosen
     reported = await setting_get(homey, SETTING_UI_LANGUAGE)
     if reported:
         return reported[:2].lower()

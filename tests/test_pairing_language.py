@@ -214,7 +214,26 @@ def test_each_view_defaults_to_english_and_reports_its_language(path):
 
     assert 'var LANG = "en";' in text
     assert "en: {" in text and "ko: {" in text
-    assert "language: LANG" in text        # the handler is told, so it can answer in kind
+    # The handler is told what was *resolved* — never the English default, which the app
+    # would store as the user's language (0.6.5 did, and every status label went English).
+    assert "language: REPORTED" in text and "language: LANG" not in text
+
+
+LANGUAGE_VIEWS = VIEWS + [ROOT / "settings" / "index.html"]
+
+
+@pytest.mark.parametrize("path", LANGUAGE_VIEWS, ids=lambda p: str(p.relative_to(ROOT)))
+def test_each_view_waits_for_the_language_promise(path):
+    """`getLanguage()` returns a Promise on current Homey builds.
+
+    Read as a string it became "[o" (pair views → English) or failed the type test (settings
+    → its Korean default), and each reported that guess as the user's language.
+    """
+    text = path.read_text("utf-8")
+    assert "typeof maybe.then" in text
+    assert "H.language" in text or "ref.language" in text
+    assert "getLanguage() ||" not in text
+    assert 'typeof l === "string"' not in text
 
 
 @pytest.mark.parametrize("path", VIEWS, ids=lambda p: str(p.relative_to(ROOT)))
@@ -250,3 +269,46 @@ def test_the_english_locale_is_actually_english():
     text = (ROOT / "locales/en.json").read_text("utf-8")
 
     assert not any("가" <= ch <= "힣" for ch in text)
+
+
+# --- the language picker in the app settings -----------------------------------
+
+
+def _root_api():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("navien_root_api", ROOT / "api.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("pick", ["ko", "en"])
+def test_a_picked_language_beats_whatever_was_detected(make_homey, pick):
+    """A misdetection (0.6.5 stored "en" for Korean users) must be overridable by hand."""
+    from navien_lib import compat
+    other = "en" if pick == "ko" else "ko"
+    homey = make_homey(settings={SETTING_UI_LANGUAGE: other})
+    api = _root_api()
+
+    res = _run(api.set_language(homey, body={"choice": pick}))
+    assert res["language"] == pick and res["language_choice"] == pick
+    # A later detection report is still remembered, but does not override the pick.
+    _run(api.set_language(homey, body={"language": other}))
+    assert _run(compat.ui_language(homey)) == pick
+
+
+def test_auto_goes_back_to_detection(make_homey):
+    from navien_lib import compat
+    homey = make_homey(settings={SETTING_UI_LANGUAGE: "ko"})
+    api = _root_api()
+    _run(api.set_language(homey, body={"choice": "en"}))
+    _run(api.set_language(homey, body={"choice": "auto"}))
+    assert _run(compat.ui_language(homey)) == "ko"
+    assert _run(api.get_status(homey))["language_choice"] == "auto"
+
+
+def test_an_unknown_choice_is_ignored(make_homey):
+    from navien_lib import compat
+    homey = make_homey(settings={SETTING_UI_LANGUAGE: "ko"})
+    _run(_root_api().set_language(homey, body={"choice": "fr"}))
+    assert _run(compat.ui_language(homey)) == "ko"

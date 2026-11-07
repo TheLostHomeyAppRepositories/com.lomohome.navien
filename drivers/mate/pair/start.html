@@ -34,15 +34,35 @@
   var LANG = "en";
   function t(k) { return (STR[LANG] && STR[LANG][k]) || STR.en[k] || k; }
 
-  // Homey's own accessor first; `navigator.language` is the fallback for builds whose
-  // pair webview does not expose it. The resolved code is sent to the handlers so their
-  // replies come back in the same language — they cannot work it out on their own.
+  // **`getLanguage()` returns a Promise** on current Homey builds, and `Homey.language` is
+  // only set once i18n has loaded. Reading the return value as a string — as 0.6.5 did —
+  // turned it into "[o", fell through to English, and *reported* English, which the app then
+  // stored as the user's language: every status label on every device went English. Walk all
+  // the shapes, then the browser's own setting. `REPORTED` stays "" when nothing answered,
+  // so a guess is never sent to the app as if it were the user's choice.
+  var REPORTED = "";
   function resolveLang(ref) {
-    var code = "";
-    try { if (ref && typeof ref.getLanguage === "function") code = ref.getLanguage() || ""; } catch (e) { /* ignore */ }
-    if (!code) { try { code = navigator.language || ""; } catch (e) { /* ignore */ } }
-    code = String(code).slice(0, 2).toLowerCase();
-    if (STR[code]) LANG = code;
+    return new Promise(function (resolve) {
+      var settled = false;
+      function done(value) {
+        if (settled) return;
+        settled = true;
+        var raw = typeof value === "string" && value ? value : "";
+        if (!raw) { try { raw = navigator.language || ""; } catch (e) { /* ignore */ } }
+        var code = String(raw).slice(0, 2).toLowerCase();
+        if (STR[code]) { LANG = code; REPORTED = code; }
+        resolve(LANG);
+      }
+      try {
+        if (ref && typeof ref.language === "string" && ref.language) return done(ref.language);
+        var maybe = ref && typeof ref.getLanguage === "function"
+          ? ref.getLanguage(function (err, value) { done(err ? null : value); }) : null;
+        if (maybe && typeof maybe.then === "function") return maybe.then(done, function () { done(null); });
+        if (typeof maybe === "string") return done(maybe);
+      } catch (e) { /* fall through */ }
+      // Never block the view on a lookup that may never answer.
+      setTimeout(function () { done(null); }, 1500);
+    });
   }
 
   function applyI18n() {
@@ -65,10 +85,8 @@
     if (!ref) return;
     if (!document.getElementById("msg")) return;
     started = true; H = ref;
-    resolveLang(ref);
-    applyI18n();
     try { H.ready(); } catch (e) { /* ignore */ }
-    flow();
+    resolveLang(ref).then(function () { applyI18n(); flow(); });
   }
 
   function flow() {
@@ -97,7 +115,7 @@
     function check() {
       btn.style.display = "none";
       msg.innerHTML = '<span class="spinner"></span>';
-      Promise.resolve(H.emit("check_session", { language: LANG }))
+      Promise.resolve(H.emit("check_session", { language: REPORTED }))
         .then(function (res) { if (res && res.ready) { toList(); } else { guide(res && res.reason); } })
         .catch(function (err) { guide(String((err && err.message) || err)); });
     }

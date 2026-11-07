@@ -20,7 +20,9 @@ from navien_lib.const import (
     SETTING_HOME_SEQ,
     SETTING_PASSWORD,
     SETTING_UI_LANGUAGE,
+    SETTING_UI_LANGUAGE_CHOICE,
     SETTING_USERNAME,
+    UI_LANGUAGE_CHOICES,
 )
 from navien_lib.navien.api import NavienAuthError
 
@@ -74,6 +76,8 @@ async def get_status(homey, **kwargs) -> dict:
         "configured": bool(username),
         "username": username,
         "home_seq": home_seq,
+        "language_choice": await compat.setting_get(homey, SETTING_UI_LANGUAGE_CHOICE) or "auto",
+        "language": await compat.ui_language(homey),
     }
 
 
@@ -250,9 +254,22 @@ async def check_connection(homey, **kwargs) -> dict:
 
 
 async def set_language(homey, **kwargs) -> dict:
-    """Let the settings webview report the UI language (Homey Python i18n can't)."""
+    """The settings webview reports the detected UI language (Homey Python i18n can't),
+    and/or the language the user picked (`choice`: auto / ko / en).
+
+    Devices re-read the language on every state pass, so their labels follow on the next
+    report — no restart.
+    """
     body = _body(kwargs)
+    choice = str(body.get("choice", "") or "").strip().lower()
+    if choice in UI_LANGUAGE_CHOICES:
+        await compat.setting_set(homey, SETTING_UI_LANGUAGE_CHOICE, choice)
     lang = str(body.get("language", "")).strip()
     if lang:
         await compat.remember_ui_language(homey, lang)
-    return {"ok": True, "language": await compat.setting_get(homey, SETTING_UI_LANGUAGE)}
+    return {
+        "ok": True,
+        "detected": await compat.setting_get(homey, SETTING_UI_LANGUAGE),
+        "language_choice": await compat.setting_get(homey, SETTING_UI_LANGUAGE_CHOICE) or "auto",
+        "language": await compat.ui_language(homey),
+    }

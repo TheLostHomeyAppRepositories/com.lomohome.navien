@@ -1061,6 +1061,9 @@ class AironeDevice_(device.Device):
 
     async def _apply_state(self, force: bool = False) -> None:
         u = self._unit
+        # Re-read every pass: a webview that reports the language later (settings, pairing)
+        # must fix the labels without an app restart. One stored-setting read.
+        self._language = await compat.ui_language(self.homey)
         # Read-only reflections of the appliance's own state — always applied so a change
         # (e.g. entering '자동 건조중') shows immediately, never held by the settle window.
         await self._set("navien_running_state", u.running_name(self._language))
