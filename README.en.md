@@ -35,14 +35,18 @@ The Homey port itself is © 2026 Geunwon Mo.
   humidity, an overall air-quality score and remaining filter life. TVOC and radon carry a
   "good / bad" grade label. Every reading is parsed as a number, so it graphs in Insights.
 - **AirMonitor** — paired as its own sensor device.
-- **Sleep mats** — power, per-zone temperature (0.5 °C) and heat level, single/double,
-  seasonal heating/cooling, running/error state and over-temperature warning. Zones can be
-  stopped individually — one step below the minimum *is* "off" on this hardware. On/off is
+- **Sleep mats** — power, per-zone temperature (0.5 °C or 1 °C) and heat level,
+  single/double, seasonal heating/cooling, running/error state, over-temperature warning and
+  the key tone on 2024+ models. Changing a temperature or level while the mat is off **stores
+  it without switching on** — the mat starts with it next time, as in the phone app. A level
+  change never touches power or the running mode. A single mat is switched on and off only
+  with its power switch; a value below its range is raised to the minimum. Water mats with
+  1 °C steps paired on an earlier version need to be re-paired. On a split mat zones can be stopped individually — one step below
+  the minimum *is* "off" on this hardware. On/off is
   read from the mat's own enable flag **while the appliance is on**, the way the phone app
   does it: a zone that is off shows as off even while it reports a normal temperature, but
   a powered-down mat flags every zone that way, so there **the temperature you set stands**.
-- **Split-mat power** — setting a temperature or heat level on one side of a cold mat
-  switches the mat on with it. **The last running side cannot be stopped** — the appliance
+- **Split-mat power** — **The last running side cannot be stopped** — the appliance
   refuses it — so the app says why and points at the power switch. It will not cut power
   for you: powering this hardware on wakes **both** sides, so doing that would throw away a
   one-side-only setup every time (measured in the original project).
@@ -84,6 +88,8 @@ The Homey port itself is © 2026 Geunwon Mo.
 3. Add a device → **Navien AirOne / AirMonitor / Sleep mat** → pick it from the account's
    device list. If no account is saved yet, sign in from the app settings first.
 4. If you change your password, sign in again from the device's **repair** flow.
+5. Pick the language of device status labels under **app settings → Language**
+   (Automatic / 한국어 / English).
 
 ## Build
 
