@@ -185,20 +185,64 @@ def test_a_zone_of_unknown_state_counts_as_running():
     assert m.desired_zone_off("right")["heater"]["right"]["temperature"]["set"] == 27.5
 
 
-def test_a_single_zone_mat_is_not_refused():
-    """Deliberately unlike upstream, which refuses this too.
+def test_a_single_zone_mat_powers_off_instead():
+    """navien_smart_ha v0.21.0: a single mat has no other side to keep, so its off is power.
 
-    A single-zone mat has no other zone, so the "something must stay on" rule would refuse
-    every zone-off it could ever make — removing the only way that mat has had to stop
-    heating. The measurement behind the rule comes from a dual-control mat, and the app's
-    own guard reads as dual-only, so extending it here would be inference.
+    This app used to park the zone at `off_value`, which nobody measured on a single mat;
+    upstream refused, so every off failed. Power-off is the one off known to work.
     """
     m = mate.MateDevice.from_raw(_single_temp())     # rangeMin 20 -> off_value 19.5
     m.apply_reported({"operationMode": 1, "heater": {
         "single": {"enable": True, "temperature": {"set": 24.5}}}})
 
-    assert m.desired_zone_off("single") == {
-        "heater": {"single": {"enable": False, "temperature": {"set": 19.5}}}}
+    assert m.desired_zone_off("single") == {"operationMode": 0}
+
+
+def test_a_value_below_a_single_mats_range_is_lifted_not_powered_off():
+    """"Set 25 °C" on a 28..50 mat asks for less heat; switching off is the power card's."""
+    raw = _single_temp()
+    fn = raw["Properties"]["registry"]["attributes"]["functions"]
+    fn["heatControl"] = {"unit": "0.5C", "rangeMin": 28, "rangeMax": 50}
+    m = mate.MateDevice.from_raw(raw)
+    m.apply_reported({"operationMode": 1, "heater": {
+        "single": {"enable": True, "temperature": {"set": 33.0}}}})
+    d = m.desired_temperature("single", 25)
+    assert d["heater"]["single"] == {"enable": True, "temperature": {"set": 28.0}}
+
+
+def test_a_single_mat_picker_has_no_off_stop():
+    """Off is the switch on a single mat. Powered off it still reports the value it will
+    start with, so that is what is drawn — and a zone parked below the range by an older
+    version is lifted to the floor the picker can show."""
+    m = mate.MateDevice.from_raw(_single_temp())
+    assert m.homey_capability_options()["target_temperature"]["min"] == 20
+
+    m.apply_reported({"operationMode": 0, "heater": {
+        "single": {"enable": False, "temperature": {"set": 33.0}}}})
+    assert m.zone_display_value("single") == 33.0
+    m.apply_reported({"heater": {"single": {"temperature": {"set": 19.5}}}})
+    assert m.zone_display_value("single") == 20.0
+
+
+def test_a_single_level_mat_has_no_standby_stop():
+    """navien_smart_ha v0.21.1 (EME-500): 운전 대기 stops one side; a single mat has none."""
+    raw = _single_temp()
+    fn = raw["Properties"]["registry"]["attributes"]["functions"]
+    fn["heatControl"] = {"unit": "1.0L", "rangeMin": 1, "rangeMax": 8}
+    m = mate.MateDevice.from_raw(raw)
+    opts = m.homey_capability_options()["navien_heat_level"]
+    assert (opts["min"], opts["max"]) == (1, 8)
+
+    m.apply_reported({"operationMode": 1, "heater": {
+        "single": {"enable": True, "level": {"set": 3}}}})
+    # A flow card can still send 0: lifted to the lowest level, power left alone.
+    assert m.desired_level("single", 0) == {
+        "heater": {"single": {"enable": True, "level": {"set": 1}}}}
+
+
+def test_a_double_mat_keeps_its_off_stop():
+    d = mate.MateDevice.from_raw(_double_level_four_season())
+    assert d.homey_capability_options()["navien_heat_level.left"]["min"] == 0
 
 
 def test_temperature_picker_can_reach_the_off_value():
@@ -326,42 +370,63 @@ def test_unknown_power_is_not_treated_as_running():
     assert m.zone_is_off("left") is False and m.zone_display_value("left") == 33.0
 
 
-def test_an_unconfirmed_control_axis_invents_nothing():
-    """Water mats report `1.0C`, an axis nobody here has measured.
-
-    `off_value` is `rangeMin - step`, and `step` is only known for the two axes that were
-    checked against real hardware. Guessing 0.5 for an unverified one would send a
-    plausible number to an appliance that may read it as something else, so the mat gets
-    no temperature control at all and zone-off refuses out loud.
-    """
+def test_a_whole_degree_mat_steps_by_one():
+    """`1.0C` (water mats, EQM-580) is a temperature mat with a 1-degree step —
+    navien_smart_ha v0.19.0 (issue #25). The app reads the step off the unit's front."""
     raw = _single_temp()
     fn = raw["Properties"]["registry"]["attributes"]["functions"]
     fn["heatControl"] = {"unit": "1.0C", "rangeMin": 28, "rangeMax": 45}
     m = mate.MateDevice.from_raw(raw)
 
+    assert m.heat_control.is_celsius and m.heat_control.step == 1.0
+    assert m.heat_control.off_value == 27
+    assert "target_temperature" in m.homey_capabilities()
+    opts = m.homey_capability_options()["target_temperature"]
+    assert (opts["min"], opts["max"], opts["step"]) == (28, 45, 1.0)
+
+
+def test_an_unknown_control_axis_invents_nothing():
+    """An axis nobody has seen gets no control and no off value, rather than a guess."""
+    raw = _single_temp()
+    fn = raw["Properties"]["registry"]["attributes"]["functions"]
+    fn["heatControl"] = {"unit": "2.0X", "rangeMin": 28, "rangeMax": 45}
+    m = mate.MateDevice.from_raw(raw)
+
     assert not m.heat_control.is_known and m.heat_control.off_value is None
     caps = m.homey_capabilities()
     assert "target_temperature" not in caps and "navien_heat_level" not in caps
-    try:
-        m.desired_zone_off("single")
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("an unknown axis must not produce an off value")
+    # Powering a single mat off needs no axis, so that still works.
+    assert m.desired_zone_off("single") == {"operationMode": 0}
 
 
-def test_setting_a_heat_level_powers_the_mat_on():
-    """`desired_temperature` always did; this did not, so a level mat that was off stayed
-    off while its tile moved. Turning a zone on from cold turns the appliance on with it.
-    """
+def test_a_powered_off_mat_stores_a_new_value_without_turning_on():
+    """navien_smart_ha v0.21.0: off, a value change is "start with this next time" — the
+    app's home card sends no `operationMode` (EQM-580 temperature, EME-500 level)."""
     d = mate.MateDevice.from_raw(_double_level_four_season())
     d.apply_reported({"operationMode": 0, "season": 0, "heater": {
-        "left": {"enable": False, "level": {"set": 0}},
-        "right": {"enable": False, "level": {"set": 0}}}})
+        "left": {"enable": False, "level": {"set": 2}},
+        "right": {"enable": False, "level": {"set": 2}}}})
+    stored = d.desired_level("left", 3)
+    assert "operationMode" not in stored
+    assert stored["heater"]["left"] == {"enable": True, "level": {"set": 3}}
 
-    on = d.desired_level("left", 3)
-    assert on["operationMode"] == 1
-    assert on["heater"]["left"] == {"enable": True, "level": {"set": 3}}
+    m = mate.MateDevice.from_raw(_single_temp())
+    m.apply_reported({"operationMode": 0, "heater": {
+        "single": {"enable": False, "temperature": {"set": 30.0}}}})
+    assert "operationMode" not in m.desired_temperature("single", 33)
+
+
+def test_a_running_or_unknown_mat_still_gets_the_power_on_shape():
+    d = mate.MateDevice.from_raw(_double_level_four_season())
+    d.apply_reported({"operationMode": 1, "season": 0, "heater": {
+        "left": {"enable": True, "level": {"set": 2}},
+        "right": {"enable": True, "level": {"set": 2}}}})
+    # A level never carries a mode: re-sending 1 would knock a running mat out of
+    # 수면/예약 into plain heating (upstream's select sends none either).
+    assert "operationMode" not in d.desired_level("left", 3)
+
+    m = mate.MateDevice.from_raw(_single_temp())     # no mode reported yet
+    assert m.desired_temperature("single", 30)["operationMode"] == 1
 
 
 def test_stopping_a_level_zone_still_leaves_power_alone():
@@ -393,3 +458,38 @@ def test_mate_control_raw_body():
     assert '"$aws\\/things\\/MAT-1\\/shadow\\/name\\/status\\/update"' in raw
     assert '"modelCode": 700' in raw and '"operationMode": 1' in raw
     assert "control?homeSeq=100&userSeq=77" in captured["path"]
+
+
+def _raw_for(model_code, desired):
+    api = NavienApi(username="u", password="p")
+    api.user_seq = "77"
+    captured = {}
+
+    async def fake(method, path, raw_body=None):
+        captured["raw"] = raw_body
+        return {}
+
+    api._authed = fake
+    asyncio.new_event_loop().run_until_complete(api.mate_control(
+        device_seq=11, home_seq=100, device_id="MAT-1", model_code=model_code,
+        service_code=200, desired=desired))
+    return captured["raw"]
+
+
+def test_a_2024_mat_beeps_on_control_only():
+    """navien_smart_ha v0.19.0 (issue #23): the app's key-tone flag, 2024+ models only,
+    and never on the empty state request (or the mat beeps whenever the app starts)."""
+    assert '"beep": true' in _raw_for(514, {"operationMode": 1})
+    assert '"beep"' not in _raw_for(514, {})
+    assert '"beep"' not in _raw_for(700, {"operationMode": 1})
+
+
+def test_a_whole_degree_mat_is_never_sent_a_half_degree():
+    raw = _single_temp()
+    fn = raw["Properties"]["registry"]["attributes"]["functions"]
+    fn["heatControl"] = {"unit": "1.0C", "rangeMin": 28, "rangeMax": 45}
+    m = mate.MateDevice.from_raw(raw)
+    m.apply_reported({"operationMode": 1, "heater": {
+        "single": {"enable": True, "temperature": {"set": 30.0}}}})
+    sent = m.desired_temperature("single", 33.5)["heater"]["single"]["temperature"]["set"]
+    assert sent in (33.0, 34.0)

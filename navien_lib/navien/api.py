@@ -41,6 +41,7 @@ from navien_lib.const import (
     CODE_SUCCESS,
     CODE_TOKEN_EXPIRED,
     LOGIN_URL,
+    MATE_MODELS_AFTER_2024,
     USER_AGENT,
 )
 from navien_lib.navien import tls
@@ -266,6 +267,11 @@ class NavienApi:
         topic value is escaped, exactly as the app does.
         """
         topic = f"$aws/things/{device_id}/shadow/name/status/update"
+        # The key tone: the app puts `beep: true` on every control command to a 2024+ mat
+        # and the appliance sounds only then (navien_smart_ha v0.19.0, issue #23). Never on
+        # the empty state request, or the mat would beep each time the app starts.
+        if desired and int(model_code) in MATE_MODELS_AFTER_2024:
+            desired = {**desired, "beep": True}
         body = {
             "serviceCode": service_code,
             "topic": "\x00TOPIC\x00",

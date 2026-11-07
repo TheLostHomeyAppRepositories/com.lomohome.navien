@@ -8,8 +8,8 @@ hardware-verified product.
 Key rules carried over (see docs/PORTING.md):
   * Zones: single ("single") or double ("left"/"right"), decided by mcu.capacity==2 or a
     nickName.side dict — never by the model name.
-  * Type per HeatControl.unit: "0.5C" temperature mats vs "1.0L" level mats. Reads take
-    whichever axis is present.
+  * Type per HeatControl.unit: "0.5C"/"1.0C" temperature mats vs "1.0L" level mats. The
+    number in front is the step. Reads take whichever axis is present.
   * Four-season mats have a coolControl; range and behaviour switch with `season`
     (0 heat / 2 cool). Cooling mirrors an empty zone from the other side.
   * State is deep-merged (partial reports); control never optimistically updates.
@@ -21,12 +21,12 @@ from dataclasses import dataclass, field
 
 from navien_lib.const import (
     CAPACITY_DOUBLE,
+    CELSIUS_STEPS,
     MAT_MODE_NAMES,
     MAT_MODES_ON,
     MAT_SEASON_NAMES,
     SEASON_SUMMER,
     SERVICE_MATE,
-    UNIT_CELSIUS,
     UNIT_LEVEL,
     ZONE_LEFT,
     ZONE_RIGHT,
@@ -82,7 +82,7 @@ class HeatControl:
 
     @property
     def is_celsius(self) -> bool:
-        return self.unit == UNIT_CELSIUS
+        return self.unit in CELSIUS_STEPS
 
     @property
     def is_known(self) -> bool:
@@ -90,7 +90,8 @@ class HeatControl:
 
     @property
     def step(self) -> float:
-        return 0.5 if self.is_celsius else 1.0
+        """The number in front of the `<step><axis>` unit (0.5, or 1.0 for `1.0C`/`1.0L`)."""
+        return CELSIUS_STEPS[self.unit] if self.is_celsius else 1.0
 
     @property
     def off_value(self) -> float | None:
@@ -359,6 +360,15 @@ class MateDevice:
         preserving what the appliance actually holds, not what the screen draws.
         """
         setting = self.zone_setting(zone)
+        if not self.is_double:
+            # A single mat's picker has no "off" stop — power is the switch's job (see
+            # `desired_zone_off`). Off, the appliance keeps reporting the value it will
+            # start with, so that is what is drawn; a value parked below the range by an
+            # older version of this app is lifted to the floor the picker can show.
+            floor = self._single_floor()
+            if setting is None or floor is None:
+                return setting
+            return max(float(setting), float(floor))
         if self.zone_is_off(zone) is not True:
             return setting
         control = self.active_control
@@ -414,37 +424,77 @@ class MateDevice:
             heater[zone] = {"enable": enabled, axis: {"set": number}}
         return {"heater": heater}
 
+    def _single_floor(self):
+        """The lowest value a single mat's picker offers — the same number the picker's
+        `min` uses (`homey_capability_options`), so a displayed value always fits it."""
+        control = self.active_control
+        if control is None or not control.is_known:
+            return None
+        if control.is_level:
+            return control.range_min or 1
+        return self.temperature_picker_range(control)["min"]
+
+    def _keeps_power(self) -> bool:
+        """Should a value change carry `operationMode: 1`? **Not while the mat is off.**
+
+        A powered-off mat that is sent a temperature or level **stores it and starts with it
+        at the next power-on** — the phone app's home card sends exactly that (`control-temp`
+        has no `operationMode`), measured on an EQM-580 (temperature) and an EME-500 (level)
+        in navien_smart_ha v0.21.0. So changing a value while off is "set it for later", and
+        powering on is the switch's job. Until 0.6.6 this app powered the mat on with every
+        value change; the level axis was added to that in 0.6.6 on the strength of upstream's
+        v0.18.1 README, which v0.21.0 then corrected.
+
+        On, the command is the shape verified while on. Unknown power (no mode yet) keeps
+        the old behaviour too, as upstream does — it is the form known to work.
+
+        **Temperature only.** Upstream's level select never sends `operationMode` in any
+        power state, and re-sending `1` to a running mat would drop it out of 수면/예약/살균
+        (any on-mode other than 1) into plain heating. The temperature axis keeps upstream's
+        climate behaviour, which has the same exposure — parity, not a new risk.
+        """
+        return self.is_on is not False
+
     def desired_temperature(self, zone, value) -> dict:
         value = float(value)
+        control = self.active_control
+        if control and control.is_celsius:
+            # The Flow card moves in 0.5 steps; a `1.0C` mat must not be sent 33.5.
+            value = round(value / control.step) * control.step
+        if not self.is_double:
+            # "Set 25 °C" on a 28..50 mat asks for less heat, not for power-off. A single
+            # mat's off is the power switch, so a value below its range is lifted to it.
+            floor = self._single_floor()
+            if floor is not None:
+                value = max(value, float(floor))
         off = self._off_value()
         if off is not None and value <= off:
             return self.desired_zone_off(zone)
         d = self.build_heater_desired({zone: value}, enables={zone: True})
-        d["operationMode"] = 1
+        if self._keeps_power():
+            d["operationMode"] = 1
         return d
 
     def desired_level(self, zone, value) -> dict:
-        """Set a heat level, powering the appliance on with it.
+        """Set a heat level. **Never touches power** — upstream's level select sends no
+        `operationMode` in any state (see `_keeps_power`): off, the mat stores the level for
+        the next power-on (EME-500); on, it keeps whatever mode it is running.
 
-        **The `operationMode` was missing here.** `desired_temperature` has always sent it
-        and this did not, so on a powered-off level mat picking a heat level set the level
-        and left the appliance off — the tile moved and nothing warmed up. Both axes now
-        behave the same, which is also what the appliance expects: turning a zone on from
-        cold turns the mat on with it (navien_smart_ha v0.18.1's README, measured).
-
-        Stopping a zone still leaves power alone — see `desired_zone_off`.
+        0 stops a zone on a double mat (`desired_zone_off`). A single mat has no zone to
+        stop, so a value below its range is lifted to it, as for temperature.
         """
         value = int(value)
+        if not self.is_double:
+            floor = self._single_floor()
+            if floor is not None:
+                value = max(value, int(floor))
         off = self._off_value()
         if off is not None and value <= off:
             return self.desired_zone_off(zone)
         # With no `off_value` the axis is unconfirmed, so `0` is the only value we can read
         # as "not running" — see `HeatControl.off_value`.
         running = True if off is not None else value > 0
-        desired = self.build_heater_desired({zone: value}, enables={zone: running})
-        if running:
-            desired["operationMode"] = 1
-        return desired
+        return self.build_heater_desired({zone: value}, enables={zone: running})
 
     def _off_value(self):
         control = self.active_control
@@ -470,13 +520,18 @@ class MateDevice:
         one-zone stop would therefore throw away a one-side-only setup — the next power-on
         would heat the side the user had deliberately stopped, every time.
 
-        Unlike upstream, a **single-zone** mat is not refused: its `zones` has no other
-        member, so `stays_on` there would always be false, and refusing would remove the
-        only way that mat has ever had to stop heating. The evidence for the refusal comes
-        from a dual-control mat, and the app's own guard (`if (heatType != 2 && heatType
-        != 1) return true`) reads as dual-only, so extending it to single-zone would be
-        inference, not the observation.
+        **A single-zone mat is powered off instead** (navien_smart_ha v0.21.0). It has one
+        zone, so there is no one-side setup to lose, and power is the only "off" it has:
+        upstream refused it and every off — card, voice, automation — failed; this app used
+        to park the zone at `off_value`, which no one ever measured on a single mat. A powered
+        off mat keeps reporting the value it will start with, so the picker has no off stop
+        on a single mat either (`homey_capability_options`, `zone_display_value`), and a
+        value below its range is lifted to the range rather than read as "off"
+        (`desired_temperature`, `desired_level`). Power-off needs no axis, so it is decided
+        before `off_value` is.
         """
+        if not self.is_double:
+            return {"operationMode": 0}
         off = self._off_value()
         if off is None:
             raise ValueError("cannot compute this mat's off value (no rangeMin/unit)")
@@ -536,28 +591,41 @@ class MateDevice:
             sfx = self._suffix(zone)
             title = self._zone_title(zone)
             if hc and hc.is_celsius:
-                # The floor is `off_value`, not `rangeMin`. One step below the minimum is
-                # how this appliance expresses "this zone is off" (see `off_value`), so a
-                # picker that stops at `rangeMin` cannot turn a zone off and cannot even
-                # display one the phone app turned off — 27.5 would be out of range.
-                floor = active.off_value if active else None
-                if floor is None:
-                    floor = active.range_min if active else None
                 opts[f"target_temperature{sfx}"] = {
-                    "title": title,
-                    "min": 20 if floor is None else floor,
-                    "max": (active.range_max if active else None) or 45,
-                    "step": 0.5,
-                }
+                    "title": title, **self.temperature_picker_range(active)}
                 opts[f"measure_temperature{sfx}"] = {"title": title}
             elif hc and hc.is_level:
                 opts[f"navien_heat_level{sfx}"] = {
                     "title": title,
-                    "min": 0,
+                    # A double mat's 0 is 운전 대기 — one side off. A single mat has no
+                    # side to stop, so its list is only "run at this level when on"
+                    # (navien_smart_ha v0.21.1, EME-500).
+                    "min": 0 if self.is_double else (hc.range_min or 1),
                     "max": (hc.range_max or 9),
                     "step": 1,
                 }
         return opts
+
+    def temperature_picker_range(self, control=None) -> dict:
+        """`min`/`max`/`step` for a temperature picker under `control` (default: active).
+
+        On a double mat the floor is `off_value`, not `rangeMin`. One step below the minimum
+        is how this appliance expresses "this zone is off" (see `off_value`), so a picker
+        that stops at `rangeMin` cannot turn a zone off and cannot even display one the phone
+        app turned off — 27.5 would be out of range. A single mat stops at `rangeMin`: its
+        off is the power switch (see `desired_zone_off`).
+        """
+        control = control or self.active_control
+        floor = None
+        if control:
+            floor = control.off_value if self.is_double else None
+            if floor is None:
+                floor = control.range_min
+        return {
+            "min": 20 if floor is None else floor,
+            "max": (control.range_max if control else None) or 45,
+            "step": control.step if control and control.is_celsius else 0.5,
+        }
 
 
 def extract_mate_reported(topic: str, payload: dict):

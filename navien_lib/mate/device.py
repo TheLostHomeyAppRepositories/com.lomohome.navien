@@ -61,6 +61,7 @@ class MateDevice_(device.Device):
         self._tasks: set = set()
         self._poll_task = None
         self._last_range = None
+        self._level_ranges_synced = False
         # Set on teardown so the poll task's done-callback can tell "died" from
         # "dismantled"; see _on_poll_task_done.
         self._closing = False
@@ -650,6 +651,12 @@ class MateDevice_(device.Device):
         if m is None:
             return
         caps = self.get_capabilities()
+        # Re-read every pass: a webview that reports the language later (settings, pairing)
+        # must fix the labels without an app restart. One stored-setting read.
+        self._language = await compat.ui_language(self.homey)
+        # Ranges first: they follow `active_control`, already known here, and a value
+        # written into the previous season's range would be refused until the next report.
+        await self._sync_ranges()
         await self._set("onoff", m.is_on)
         await self._set_str("navien_operation_mode", m.mode_name(self._language))
         await self._set("navien_error_code", self._num(m.error_code))
@@ -667,25 +674,53 @@ class MateDevice_(device.Device):
                 await self._set(cap, self._num(m.zone_current(zone)))
             elif base == "navien_heat_level":
                 await self._set(cap, self._num(m.zone_display_value(zone)))
-        await self._sync_ranges()
 
     async def _sync_ranges(self) -> None:
-        """Re-push target-temperature min/max when the four-season range changes."""
+        """Re-push target-temperature min/max when the four-season range changes.
+
+        Same range as at pairing (`temperature_picker_range`): this used to push
+        `rangeMin` as the floor, which took a double mat's off stop away on the first
+        report, and a fixed 0.5 step that a `1.0C` mat does not have.
+        """
         m = self._mat
-        active = m.active_control if m else None
+        if m is None:
+            return
+        await self._sync_level_ranges()
+        active = m.active_control
         if not active or not active.is_celsius:
             return
-        key = (active.range_min, active.range_max)
+        opts = m.temperature_picker_range(active)
+        key = (opts["min"], opts["max"], opts["step"])
         if key == self._last_range:
             return
         self._last_range = key
-        opts = {"min": active.range_min or 20, "max": active.range_max or 45, "step": 0.5}
         for cap in self.get_capabilities():
             if _split(cap)[0] == "target_temperature":
                 try:
                     await self.set_capability_options(cap, opts)
                 except Exception:
                     pass
+
+    async def _sync_level_ranges(self) -> None:
+        """Push the heat-level picker range once per init.
+
+        Options are fixed at pairing, so a single level mat paired before 0.6.7 still
+        offers 0 (운전 대기), which a single mat no longer has (navien_smart_ha v0.21.1).
+        """
+        if self._level_ranges_synced:
+            return
+        wanted = self._mat.homey_capability_options()
+        ok = True
+        for cap in self.get_capabilities():
+            if _split(cap)[0] != "navien_heat_level" or cap not in wanted:
+                continue
+            opts = {k: wanted[cap][k] for k in ("min", "max", "step")}
+            try:
+                await self.set_capability_options(cap, opts)
+            except Exception as exc:
+                ok = False      # retried on the next report
+                self.log(f"set {cap} options failed: {exc}")
+        self._level_ranges_synced = ok
 
     async def _set(self, capability: str, value) -> None:
         if value is None or capability not in self.get_capabilities():

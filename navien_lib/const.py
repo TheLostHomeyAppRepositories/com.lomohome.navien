@@ -49,6 +49,18 @@ AIRONE_V2_MIN_MODEL_CODE = 1000
 # --- Sleep mat (숙면매트, serviceCode 200) ---------------------------------
 UNIT_LEVEL = "1.0L"          # heater.*.level.set — integer steps
 UNIT_CELSIUS = "0.5C"        # heater.*.temperature.set — 0.5 °C steps
+UNIT_CELSIUS_WHOLE = "1.0C"  # heater.*.temperature.set — 1 °C steps (water mats, EQM-580)
+# `<step><axis>`. The app never tables the unit string: it cuts the number off the front
+# and uses it as the step (`MateInfoData`, `unit.substring(0, len - 1)`), and tells a level
+# mat by whether the state carries `level`. So `1.0C` is a 1-degree temperature mat —
+# navien_smart_ha v0.19.0 (issue #25), whose reporter's state carried `temperature.set`.
+CELSIUS_STEPS = {UNIT_CELSIUS: 0.5, UNIT_CELSIUS_WHOLE: 1.0}
+
+# Mats the app treats as "2024 or later" (`MateInfoData.setModelCodeAndFunction`). The app
+# puts `beep: true` on **every control command** to these, and the appliance only sounds
+# its key tone when it is there (navien_smart_ha v0.19.0, issue #23). Older models never
+# get it — we do not send what the app does not.
+MATE_MODELS_AFTER_2024 = frozenset({10, 17, 18, 259, 260, 261, 262, 514, 530})
 
 ZONE_SINGLE = "single"
 ZONE_LEFT = "left"
@@ -92,6 +104,10 @@ SETTING_PASSWORD = "navien_password"
 SETTING_HOME_SEQ = "navien_home_seq"
 SETTING_PAIR_ENV = "pair_env"
 SETTING_UI_LANGUAGE = "ui_language"
+# What the user picked in the app settings: "auto" (follow what a webview detects) or a
+# language code. A pick beats detection, so a misdetection can always be overridden.
+SETTING_UI_LANGUAGE_CHOICE = "ui_language_choice"
+UI_LANGUAGE_CHOICES = ("auto", "ko", "en")
 
 # --- Per-device store keys -------------------------------------------------
 STORE_DEVICE_SEQ = "device_seq"        # REST id, used in control URLs
