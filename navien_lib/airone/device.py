@@ -125,6 +125,10 @@ class AironeDevice_(device.Device):
         # The Navien session is shared app-wide (one session per account), acquired in
         # _run. Kept as None until then.
         self._api = None
+        # Whether `/air-sensor` has answered at least once since boot (navien_smart_ha
+        # v0.26.1, #30): the device list can declare no sensors while the endpoint serves
+        # them all, so an empty declaration is only believed once an actual read agrees.
+        self._air_sensor_probed = False
         # A model seeded with our identifiers, so control payloads carry them even
         # before the first report arrives.
         self._unit = AironeDevice(
@@ -738,12 +742,17 @@ class AironeDevice_(device.Device):
                 # test_poll_once_never_merges_device_list_into_live_state and
                 # test_humidity_range_comes_from_the_transient_unit.
                 await self._sync_humidity_range(unit.humidity_range())
-                wants_sensors = unit.wants_air_sensors()
+                # The declaration alone is not enough: THE650 lists neither a monitor nor
+                # a sensor table yet `/air-sensor` returns all nine readings (upstream #30).
+                # Ask once per boot regardless, and keep asking while values are coming.
+                wants_sensors = (unit.wants_air_sensors() or bool(self._unit.air_sensors)
+                                 or not self._air_sensor_probed)
                 break
 
         if wants_sensors:
             try:
                 sensors = await self._api.air_sensor(self._device_seq, self._home_seq)
+                self._air_sensor_probed = True
                 previous = dict(self._unit.air_sensors)
                 self._unit.apply_air_sensors(sensors)
                 # Deliberate instrumentation, and the thing it is instrumenting is not this

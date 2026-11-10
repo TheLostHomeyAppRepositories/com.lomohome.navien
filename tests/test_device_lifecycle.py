@@ -1828,3 +1828,62 @@ def test_the_airone_hands_the_event_callback_to_its_client(make_homey, monkeypat
         await dev._teardown()
 
     asyncio.run(scenario())
+
+
+# --- navien_smart_ha v0.26.1 (#30): an empty sensor declaration is checked once -------
+
+
+def _airone_declaring_no_sensors():
+    """THE650's device-list entry: no AirMonitor, and an explicitly empty `sensor` table."""
+    raw = _airone_raw()
+    rc = raw["Properties"]["data"]["did"]["reported"]["roomController"]
+    rc["sensor"] = []
+    return raw
+
+
+def test_an_empty_sensor_declaration_is_still_asked_once_and_believed_when_empty(make_homey):
+    async def scenario():
+        api = FakeApi(devices=[_airone_declaring_no_sensors()], sensors=[])
+        dev = await _airone_at_rest(make_homey, api, ["onoff"])
+
+        await dev._poll_once()
+        await dev._poll_once()
+        await dev._poll_once()
+
+        assert api.calls.get("air_sensor", 0) == 1
+
+    asyncio.run(scenario())
+
+
+def test_an_empty_declaration_that_answers_with_values_keeps_being_asked(make_homey):
+    """THE650: the list says nothing, `/air-sensor` returns every reading."""
+
+    async def scenario():
+        api = FakeApi(devices=[_airone_declaring_no_sensors()],
+                      sensors=[{"airs": [{"type": "pm2Dot5", "value": 12, "level": 1}]}])
+        dev = await _airone_at_rest(make_homey, api, ["onoff", "measure_pm25"])
+
+        await dev._poll_once()
+        await dev._poll_once()
+        await dev._poll_once()
+
+        assert api.calls.get("air_sensor", 0) == 3
+        assert dev.get_capability_value("measure_pm25") == 12
+
+    asyncio.run(scenario())
+
+
+def test_a_failed_probe_does_not_count_as_an_empty_answer(make_homey):
+    async def scenario():
+        api = FakeApi(devices=[_airone_declaring_no_sensors()], sensors=[])
+        api.fail["air_sensor"] = NavienNetworkError("no route to host")
+        dev = await _airone_at_rest(make_homey, api, ["onoff"])
+
+        await dev._poll_once()
+        api.fail.pop("air_sensor")
+        await dev._poll_once()
+        await dev._poll_once()
+
+        assert api.calls.get("air_sensor", 0) == 2
+
+    asyncio.run(scenario())
