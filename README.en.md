@@ -34,6 +34,8 @@ The Homey port itself is © 2026 Geunwon Mo.
 - **Air-quality sensors** — PM1.0, PM2.5, PM10, CO₂, TVOC (ppb), radon, temperature,
   humidity, an overall air-quality score and remaining filter life. TVOC and radon carry a
   "good / bad" grade label. Every reading is parsed as a number, so it graphs in Insights.
+  Units whose device list declares no sensors (e.g. THE650) are still asked once at
+  start-up, and kept reading if values come back.
 - **AirMonitor** — paired as its own sensor device.
 - **Sleep mats** — power, per-zone temperature (0.5 °C or 1 °C) and heat level,
   single/double, seasonal heating/cooling, running/error state, over-temperature warning and

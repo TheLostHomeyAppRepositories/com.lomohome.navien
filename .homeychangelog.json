@@ -82,5 +82,9 @@
   "0.6.7": {
     "en": "Status labels went English for some users after 0.6.5: the pairing screens misread the phone's language and saved English as yours. Fixed, and the app settings now have a Language picker (Automatic / Korean / English) that always wins over detection. Sleep mats: changing a temperature or level while the mat is off now stores it for the next power-on instead of switching it on, as the Navien app does; level changes never touch the running mode. Single mats are switched on and off with the power switch, and a value below their range is raised to the minimum. Water mats with 1-degree steps are supported (re-pair if added earlier), and 2024+ mats sound their key tone on commands.",
     "ko": "0.6.5 이후 일부 사용자에게 상태 문구가 영어로 나왔습니다. 기기 추가 화면이 휴대폰 언어를 잘못 읽어 영어를 사용자 언어로 저장했기 때문입니다. 이를 고쳤고, 앱 설정에 언어 선택(자동 / 한국어 / English)을 넣었습니다. 직접 고른 언어가 자동 감지보다 우선합니다. 숙면매트: 전원이 꺼진 상태에서 온도·단계를 바꾸면 켜지 않고 저장해 두었다가 다음에 켤 때 그 값으로 시작합니다(나비엔 앱과 같음). 단계 변경은 운전 모드를 바꾸지 않습니다. 싱글 매트는 전원 스위치로 켜고 끄며, 범위보다 낮은 값은 최저값으로 맞춥니다. 1℃ 간격 온수매트를 지원하고(이전에 등록했다면 다시 페어링), 2024년 이후 모델은 조작음이 납니다."
+  },
+  "0.7.0": {
+    "en": "Air quality now appears on AirOne units whose device list declares no sensors (e.g. THE650): the app asks once at start-up and keeps reading if values come back.",
+    "ko": "기기목록에 센서가 없다고 나오는 에어원(예: THE650)에도 공기질이 표시됩니다. 앱이 시작할 때 한 번 조회해 보고, 값이 오면 계속 읽습니다."
   }
 }
